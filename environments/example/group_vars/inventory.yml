@@ -1,0 +1,10 @@
+all:
+  hosts:
+    zos_host:
+      ansible_host: <your zos hostname>
+      ansible_user: <your mainframe user ID>
+      ansible_ssh_port: <your zOS SSH port>
+      ansible_python_interpreter: <your python installation path>
+      api_polling_retry_count: "12"
+      api_polling_interval_seconds: "10"
+      ansible_ssh_private_key_file: <your SSH key>

@@ -1,0 +1,221 @@
+###############################################################################
+# provisionServer.yml
+#
+# Description
+#   This playbook demonstrates provisioning a z/OS Connect server using the 
+#   provided creation script, starting the server and then testing it.
+# 
+# Required files
+#   - vars/common.yml
+#   Contains common variables related to your installation of z/OS Connect.
+#   - vars/provisionServer.yml
+#   Contains variables including the type of server to provision and 
+#   various other variables specific your site. Where possible, the relevant 
+#   z/OS Connect documentation has been linked.
+#     
+# Author
+#   Caleb Adra
+#   cadra@ibm.com
+#   September 2025
+#
+# No warranty implied
+###############################################################################
+
+---
+
+- hosts: zos_host
+
+  collections:
+    - ibm.ibm_zos_core
+    - ansible.builtin
+
+  environment: "{{ environment_vars }}" 
+
+  vars_files:
+    - vars/common.yml
+    - vars/provisionServer.yml
+
+  gather_facts: no
+
+  tasks:
+
+  ###############################################################################
+  # Create a z/OS Connect server from the specified template in the serverType
+  # variable. Default value of openApi3 set in /var/provisionServer.yml but
+  # can be overriden at runtime with --extra-vars
+  ###############################################################################
+    
+    - name: Confirm whether server directory {{ zcName }} already exists
+      stat:
+        path: "{{ serversDirectory }}/{{ zcName }}"
+      register: confirm_serverDirectory
+
+    - name: Abort provisioning if server directory {{ zcName }} already exists
+      fail:
+        msg: "The server directory {{ serversDirectory }}/{{ zcName }} already exists. Aborting provision of server {{ zcName }}."
+      when: confirm_serverDirectory.stat.exists
+
+    - name: Create z/OS Connect server from template
+      command: "{{ installDirectory }}/bin/zosconnect create {{ zcName }} --template=zosconnect:{{ serverType }}"
+      register: create_server
+
+  ###############################################################################
+  # Condition - Start: serverType is sample-cics-api
+  #   The zosconnect:sample-cics-api requires additional customisation 
+  #   to the generated bootstrap.properties file with the ports z/OS Connect 
+  #   should listen on as well as the host, port and credentials required to
+  #   connect to CICS.
+  #   The variables set in the bootstrap file are referenced in the cics.xml
+  #   added to the server's /configDropins/overrides directory.
+  #
+  #   If your site does not require site specific settings in the cics.xml,
+  #   this playbook will download the standard cics.xml file from the
+  #   zosconnect sample-cics-api github repository.
+  #   Alternatively, you can customise the cics.xml file and store it in the
+  #   files directory and that file will be deployed to the server instead.
+  ###############################################################################
+
+    - name: Prompt for CICS user and password
+      pause:
+        prompt: "{{ item }}"
+      with_items:
+        - "What is the user to sign on to CICS?"
+        - "What is the password to sign on to CICS?"
+      register: prompt_cicsCreds
+      when: "serverType == 'sample-cics-api'"
+
+    - name: Generate AES encrypted password for CICS user
+      shell: "{{ installDirectory }}/wlp/bin/securityUtility encode {{ prompt_cicsCreds.results[1].user_input }} --encoding=aes"
+      register: encrypt_cicsPassword
+      when: "serverType == 'sample-cics-api'"
+    
+    - name: Update bootstrap properties based on provisioning vars
+      lineinfile:
+        path: "{{ serversDirectory }}/{{ zcName }}/bootstrap.properties"
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+        backrefs: true
+      loop:
+        - { key: "HTTP_PORT", value: "{{ httpPort }}" }
+        - { key: "HTTPS_PORT", value: "{{ httpsPort }}" }
+        - { key: "CICS_HOST", value: "{{ cicsHost }}" }
+        - { key: "CICS_PORT", value: "{{ cicsPort }}" }
+        - { key: "CICS_USER", value: "{{ prompt_cicsCreds.results[0].user_input }}" }
+        - { key: "CICS_PASSWORD", value: "{{ encrypt_cicsPassword.stdout }}" }
+      when: "serverType == 'sample-cics-api'"
+
+    - name: Verify if local CICS definitions exist
+      delegate_to: "localhost"
+      stat:
+        path: "{{ playbook_dir }}/files/cics.xml"
+      register: verify_localCicsDefs
+      when: "serverType == 'sample-cics-api'"
+
+    - name: Pull cics.xml from z/OS Connect Catalog Manager Project repository if no local definitons
+      delegate_to: "localhost"
+      get_url:
+        url: https://raw.githubusercontent.com/zosconnect/sample-cics-api/refs/heads/main/finish/src/main/liberty/config/cics.xml
+        dest: "{{ playbook_dir }}/files/cics.xml"
+        mode: "0775"
+      when: "serverType == 'sample-cics-api' and not verify_localCicsDefs.stat.exists"
+    
+    - name: Copy file with owner and permissions
+      copy:
+        src: "{{ playbook_dir }}/files/cics.xml"
+        dest: "{{ serversDirectory }}/{{ zcName }}/configDropins/overrides/cics.xml"
+        mode: "0775"
+      when: "serverType == 'sample-cics-api'"
+
+  ###############################################################################
+  # Condition - Stop: serverType is sample-cics-api
+  ###############################################################################
+
+  ###############################################################################
+  # Change ownership of created server files and directories to the user ID 
+  # specified in zcOwner variable and group in zcGroup variable.
+  # In my case, the owner is the z/OS Connect STC user ID and the group is a
+  # group that includes all the z/OS Connect users. As a result, the server's
+  # apps directory permissions needed to be altered to allow those in the group
+  # to be able to deploy apis to the server. Confirmation task supplied can be
+  # uncommented for debugging.
+  ############################################################################### 
+  
+    - name: Update apps directory to be writeable by group
+      file:
+        path: "{{ serversDirectory }}/{{ zcName }}/apps/"
+        mode: '0775'
+
+    - name: Update z/OS Connect file ownership
+      shell: "echo chown -R {{ zcOwner }}:{{ zcGroup }} {{ serversDirectory }}/{{ zcName }} | su"
+      register: update_ownership
+
+    # - name: Confirm z/OS Connect file ownership change
+    #   shell: "ls -lR {{ serversDirectory }}/{{ zcName }} | awk '{if (NF >3) print $3}' | sort | uniq -c | sort -nr"
+    #   register: confirm_ownership
+    
+  ###############################################################################
+  # Start the z/OS Connect using the PROC specified in the proc variable with
+  # parms specified via the parms variable. A good basis for z/OS Connect PROC
+  # can be found in BAQ.SAMPLIB(BAQSTRT), it will require customisation for
+  # your site.
+  # Confirm that the server has successfully initialised by searching for the 
+  # string "smarter planet", which signals that the z/OS Connect is operational
+  ###############################################################################
+
+    - name: Start z/OS Connect server
+      zos_operator:
+        cmd: "S {{ proc }},JOBNAME={{ zcName }},PARMS='{{ parms }}'"
+      register: start_server
+
+    - name: Gather information about running z/OS Connect server
+      shell: "jls -o id,name,status | grep AC | grep {{ zcName }}"
+      register: gather_serverDetails
+
+    - name: Confirm server has initialised successfully
+      zos_job_output:
+        job_id: "{{ gather_serverDetails.stdout.split(' ')[0] }}"
+        ddname: "JESMSGLG"
+      register: confirm_serverInitialised
+      until: "confirm_serverInitialised.jobs[0].ddnames[0].content | select('search', 'smarter planet') | length > 0"
+      retries: 2
+      delay: 10
+
+  ###############################################################################
+  # Condition - Start: serverType is sample-cics-api
+  #   The zosconnect:sample-cics-api template contains that a completed CICS 
+  #   CatalogManager API. To ensure the customisations made above were correct, 
+  #   run the CatalogManager API as PIV to show z/OS Connect can accept an REST 
+  #   API call, connect to CICS to execute the program and reply back with the 
+  #   result of API call.
+  ###############################################################################
+
+    - name: Generate Passticket for executing user
+      zos_script:
+        cmd: ./scripts/ptktgen.sh $USER
+        executable: /bin/sh
+        remote_src: true
+      register: creds
+      when: "serverType == 'sample-cics-api'"
+
+    - name: Call CICS CatalogManager API as PIV
+      uri:
+        method: GET
+        url: "{{ zcProtocol }}://{{ zcHost }}:{{ zcPort }}/items/60"
+        url_username: "{{ creds.stdout_lines[0] }}"
+        url_password: "{{ creds.stdout_lines[1] }}"
+        force_basic_auth: yes
+        headers:
+          Content-Type: application/json
+          Accept: application/json
+        status_code: 200
+      register: catManResult
+      when: "serverType == 'sample-cics-api'"
+
+    - name: Print output from CICS Catalog Manager API
+      debug: 
+        msg: "{{ catManResult.json }}"
+      when: "serverType == 'sample-cics-api'"
+    
+  ###############################################################################
+  # Condition - Stop: serverType is sample-cics-api
+  ###############################################################################

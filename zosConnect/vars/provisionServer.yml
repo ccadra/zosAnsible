@@ -1,0 +1,38 @@
+###############################################################################
+# Server variables
+###############################################################################
+# Type of server being created, as defined in the z/OS Connect manual - see link below
+# https://www.ibm.com/docs/en/zos-connect/3.0.0?topic=reference-supplied-server-templates
+serverType: 'openApi3'
+# Server parms
+parms: "--clean"
+
+###############################################################################
+# Security variables
+###############################################################################
+# User ID and Group to own newly created z/OS Connect configuration files
+zcOwner: "ZCEESTC"
+zcGroup: "ZCEEGRP"
+
+###############################################################################
+# JES variables
+###############################################################################
+# Name of PROC to start z/OS Connect server
+proc: "ZCSTC01"
+
+###############################################################################
+# Conditional variables [serverType = sample-cics-api]
+###############################################################################
+# z/OS Connect server ports for HTTP and HTTPS connections
+httpPort: 2010
+httpsPort: 2011
+
+# CICS host address
+cicsHost: 10.2.75.104
+# CICS IPIC port for z/OS Connect to communicate with
+cicsPort: 33067
+
+# Connection Details for z/OS Connect for Catalog Manager API call
+zcProtocol: http
+zcHost: 127.0.0.1
+zcPort: 2010

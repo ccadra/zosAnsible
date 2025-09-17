@@ -1,0 +1,27 @@
+################################################################################
+# Enviroment variables for all z/OS managed nodes (target) that do not need    #
+# further configuration.                                                       #
+#                                                                              #
+# See https://docs.ansible.com/ansible/latest/os_guide/intro_zos.html          #
+################################################################################
+
+ZOAU: "<your ZOAU installation path>"
+PYZ:  "<your Python installation path>"
+JAVA: "<your Java installation path>"
+
+
+environment_vars:
+  JAVA_HOME: "{{ JAVA }}"
+  LIBPATH: "{{ ZOAU }}/lib:{{ PYZ }}/lib:/lib:/usr/lib:."
+  PATH: "{{ ZOAU }}/bin:{{ PYZ }}/bin:{{JAVA}}/bin:/var/bin:/usr/sbin:/bin"
+  PYTHONPATH: "{{ PYZ }}:{{ ZOAU }}/lib/3.12"
+  ZOAU_HOME: "{{ ZOAU }}"
+
+  _BPXK_AUTOCVT: "ON"
+  _CEE_RUNOPTS: "FILETAG(AUTOCVT,AUTOTAG) POSIX(ON)"
+  
+  _TAG_REDIR_ERR: "txt"
+  _TAG_REDIR_IN: "txt"
+  _TAG_REDIR_OUT: "txt"
+  LANG: "C"
+  PYTHONSTDINENCODING: "cp1047"

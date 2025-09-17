@@ -1,0 +1,9 @@
+environments/ASG/inventory.yml
+environments/ASG/group_vars/all.yaml
+zosConnect/files/cics.xml
+ansible.cfg
+
+# OS generated files #
+######################
+.DS_Store
+.DS_Store?

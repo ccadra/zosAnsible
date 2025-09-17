@@ -1,0 +1,29 @@
+###############################################################################
+# Local variables
+###############################################################################
+# Local directory that Git repo will be cloned to
+localRepo: "~/Documents/GitRepos"
+# Local installation of gradle
+localGradle: "/usr/local/gradle/gradle-8.10.2/bin"
+# Local installation of JDK
+localJDK: "/Library/Java/JavaVirtualMachines/ibm-semeru-open-21.jdk/Contents/Home"
+
+###############################################################################
+# Designer variables
+###############################################################################
+# Github repo containing project created via z/OS Connect Designer
+gitRepo: git@github.com:ccadra/catalogManager.git
+# Github project name
+projectName: "catalogManager"
+# z/OS CICS program asset specified in design phase
+assetName: "catalogProgram"
+# CICS connection reference specified in design phase
+designerConn: "cicsConn"
+
+###############################################################################
+# Target server variables
+###############################################################################
+# Name of API to be deployed
+apiName: "catalogManager"
+# CICS connection reference
+serverConn: "CICSSYD1"
