@@ -154,3 +154,20 @@
         - "F {{ zcName }},REFRESH,APPS"
         - "F {{ zcName }},REFRESH,CONFIG"
       register: start_server
+
+    - name: Gather information about running z/OS Connect server
+      shell: "jls -o id,name,status | grep AC | grep {{ zcName }}"
+      register: gather_serverDetails
+
+    - name: Confirm API has been successfully deployed
+      zos_job_output:
+        job_id: "{{ gather_serverDetails.stdout.split(' ')[0] }}"
+        ddname: "STDOUT"
+      register: confirm_deploy
+      until: "(confirm_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName) | length > 0)"
+      retries: 2
+      delay: 10
+
+    # - name: Print deploy
+    #   debug:
+    #     msg: "{{ confirm_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName )}}"
