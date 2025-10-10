@@ -1,5 +1,5 @@
 ###############################################################################
-# deployAPI.yml
+# remoteDeployAPI.yml
 #
 # Description
 #   This playbook demonstrates deploying an API to a native, OpenAPI 3 
@@ -45,39 +45,45 @@
   
   tasks:
 
-    - name: Confirm whether gradle installed on localhost
-      delegate_to: localhost
+    - name: Confirm whether gradle installed on z/OS
       stat:
-        path: "usr/local/gradle/"
+        path: "/usr/local/gradle/bin/gradle"
       register: confirm_gradleInstall
 
   ###############################################################################
   # Condition - Start: z/OS Connect gradle installed
   #   For consistent results, this playbook uses the gradle supplied with the
   #   z/OS Connect installation to rebuild API projects.
-  #   Copy gradle.zip from z/OS Connect installation and unzip it into PATH of
-  #   control node. 
+  #   Unzip gradle.zip and dependencies.zip from z/OS Connect installation into 
+  #   PATH of z/OS LPAR. 
   ###############################################################################
 
-    - name: Fetch gradle from z/OS Connect installation
-      fetch:
-        src: "{{ installDirectory }}/gradle.zip"
-        dest: "/tmp/gradle.zip"
-        flat: yes
-      when: not confirm_gradleInstall.stat.exists
-      
-    - name:
-      delegate_to: localhost
-      unarchive:
-        src: "/tmp/gradle.zip"
-        dest: "/usr/local/gradle/"
-      environment:
-        PATH: "/usr/bin"
+    - name: Unzip gradle.zip from the installation directory
+      shell: "jar -xvf {{ installDirectory }}/gradle.zip"
+      args:
+        chdir: "/usr/local/"
+      register: unzip_gradle
       when: not confirm_gradleInstall.stat.exists
 
-  ###############################################################################
-  # Condition - Stop: z/OS Connect gradle installed
-  ###############################################################################
+    - name: Create symlink for new install of gradle
+      shell: "ln -s {{ unzip_gradle.stdout_lines[0] | regex_search('gradle-[\\d\\.]+/') }} gradle"
+      args:
+        chdir: "/usr/local/"
+      register: create_gradleSymlink
+      when: not confirm_gradleInstall.stat.exists
+
+    - name: Update gradle binaries to be executable
+      shell: |
+        chtag -tc ISO8859-1 gradle
+        chmod +x gradle
+      args:
+        chdir: "/usr/local/gradle/bin"
+      register: update_gradlePermissions
+      when: not confirm_gradleInstall.stat.exists
+
+  # ###############################################################################
+  # # Condition - Stop: z/OS Connect gradle installed
+  # ###############################################################################
 
   ###############################################################################
   # Clone API project source from git to a local repo and modify it to allow
@@ -93,11 +99,38 @@
         force: true
       environment:
         PATH: "/usr/bin"
+
+  ###############################################################################
+  # Rebuild project with Gradle to create war file with changes incorporated.
+  # Confirmation task supplied can be uncommented for debugging.
+  ###############################################################################  
+
+    - name: Compress directory into tar file
+      delegate_to: localhost
+      archive:
+        path: "{{ localRepo }}/{{ projectName }}/"
+        dest: "/tmp/{{ projectName }}.tgz"
+        format: zip
+
+    - name: Deploy API project zip to zOS
+      copy:
+        src: "/tmp/{{ projectName }}.tgz"
+        dest: "~/tmp/{{ projectName }}.tgz"
+        mode: "0775"
     
+    - name: Unzip the project into a directory
+      shell: |
+        mkdir {{ projectName }}
+        cd {{ projectName }}
+        jar -xvf ../{{ projectName }}.tgz
+      args:
+        chdir: "~/tmp/"
+      register: untar_project
+
     - name: Update CICS connection reference for server
       delegate_to: localhost
       replace:
-        path: "{{ localRepo }}/{{ projectName }}/src/main/zosAssets/{{ assetName }}/zosAsset.yaml"
+        path: "~/tmp/{{ projectName }}/src/main/zosAssets/{{ assetName }}/zosAsset.yaml"
         regexp: "{{ designerConn }}"
         replace: "{{ serverConn }}"
       register: update_cicsConnection
@@ -105,35 +138,30 @@
     - name: Set context root of API for deployment in server
       delegate_to: localhost
       replace:
-        path: "{{ localRepo }}/{{ projectName }}/src/main/api/openapi.yaml"
+        path: "~/tmp/{{ projectName }}/src/main/api/openapi.yaml"
         after: 'servers:'
         regexp: '- url: /.*$'
         replace: '  - url: /{{ apiName }}'
       register: set_contextRoot
 
-  ###############################################################################
-  # Rebuild project with Gradle to create war file with changes incorporated.
-  # Confirmation task supplied can be uncommented for debugging.
-  ###############################################################################  
-
     - name: Build the application with Gradle
-      delegate_to: localhost
-      shell: "gradle clean build"
+      shell: bash /usr/local/gradle/bin/gradle --offline build
       args:
-        chdir: "{{ localRepo }}/{{ projectName }}"
-      environment: 
-        environment:
-        PATH: "/usr/bin:{{ localGradle }}"
-        JAVA_HOME: "{{ localJDK }}"
+        chdir: "~/tmp/{{ projectName }}/"
+      environment:
+        _BPXK_AUTOCVT: "ON"
+        GRADLE_OPTS: "-Dfile.encoding=UTF-8 -Djava.net.preferIPv4Stack=true -Djava.net.preferIPv6Addresses=false"
+      # OPENSHIFT_IP variable used due to Java 17 on z/OS preferring IPv6, even when IPv6 loopback is not enabled. I am setting this to the IPv4 loopback address of the LPAR
+        OPENSHIFT_IP: "{{ daemonIP }}"
       register: gradleResult
 
-    # - name: Confirm Gradle build STDOUT
-    #   debug: 
-    #     msg: gradleResult.stdout_lines
+    - name: Confirm Gradle build STDOUT
+      debug: 
+        msg: gradleResult.stdout_lines
 
-    # - name: Confirm Gradle build STDERR
-    #   debug: 
-    #     msg: gradleResult.stderr_lines
+    - name: Confirm Gradle build STDERR
+      debug: 
+        msg: gradleResult.stderr_lines
 
   ###############################################################################
   # Deploy API war file to server with the desired name. Issue z/OS Connect
@@ -175,6 +203,6 @@
       retries: 2
       delay: 10
 
-    # - name: Print deploy
-    #   debug:
-    #     msg: "{{ confirm_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName )}}"
+    - name: Print deploy
+      debug:
+        msg: "{{ confirm_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName )}}"

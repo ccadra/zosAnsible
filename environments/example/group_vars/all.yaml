@@ -6,14 +6,15 @@
 ################################################################################
 
 ZOAU: "<your ZOAU installation path>"
-PYZ:  "<your Python installation path>"
+PYZ: "<your Python installation path>"
 JAVA: "<your Java installation path>"
-
+OEF: "<your Open Enterprise Foundation installation path>"
 
 environment_vars:
   JAVA_HOME: "{{ JAVA }}"
-  LIBPATH: "{{ ZOAU }}/lib:{{ PYZ }}/lib:/lib:/usr/lib:."
-  PATH: "{{ ZOAU }}/bin:{{ PYZ }}/bin:{{JAVA}}/bin:/var/bin:/usr/sbin:/bin"
+  LIBPATH: "{{ ZOAU }}/lib:{{ PYZ }}/lib:{{ OEF }}/lib:/lib:/usr/lib:."
+  PATH: "{{ ZOAU }}/bin:{{ PYZ }}/bin:{{ JAVA }}/bin:{{ OEF }}/bin:/var/bin:/usr/sbin:/bin"
+  MANPATH: "{{ OEF }}/share"
   PYTHONPATH: "{{ PYZ }}:{{ ZOAU }}/lib/3.12"
   ZOAU_HOME: "{{ ZOAU }}"
 
