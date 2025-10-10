@@ -72,6 +72,13 @@
       register: create_gradleSymlink
       when: not confirm_gradleInstall.stat.exists
 
+    - name: Unzip dependencies.zip from the installation directory
+      shell: "jar -xvf {{ installDirectory }}/dependencies.zip"
+      args:
+        chdir: "/usr/local/gradle/"
+      register: unzip_dependencies
+      when: not confirm_gradleInstall.stat.exists
+
     - name: Update gradle binaries to be executable
       shell: |
         chtag -tc ISO8859-1 gradle
@@ -128,7 +135,6 @@
       register: untar_project
 
     - name: Update CICS connection reference for server
-      delegate_to: localhost
       replace:
         path: "~/tmp/{{ projectName }}/src/main/zosAssets/{{ assetName }}/zosAsset.yaml"
         regexp: "{{ designerConn }}"
@@ -136,13 +142,23 @@
       register: update_cicsConnection
 
     - name: Set context root of API for deployment in server
-      delegate_to: localhost
       replace:
         path: "~/tmp/{{ projectName }}/src/main/api/openapi.yaml"
         after: 'servers:'
         regexp: '- url: /.*$'
         replace: '  - url: /{{ apiName }}'
       register: set_contextRoot
+
+    - name: Update settings.gradle to point to dependecies location on z/OS
+      replace:
+        path: "{{ item }}"
+        after: "maven {"
+        regexp: "url .*"
+        replace: "url '/usr/local/gradle/gradleLibs'"
+      with_items:
+        - "~/tmp/{{ projectName }}/settings.gradle"
+        - "~/tmp/{{ projectName }}/build.gradle"
+      register: update_dependencies
 
     - name: Build the application with Gradle
       shell: bash /usr/local/gradle/bin/gradle --offline build
@@ -152,7 +168,7 @@
         _BPXK_AUTOCVT: "ON"
         GRADLE_OPTS: "-Dfile.encoding=UTF-8 -Djava.net.preferIPv4Stack=true -Djava.net.preferIPv6Addresses=false"
       # OPENSHIFT_IP variable used due to Java 17 on z/OS preferring IPv6, even when IPv6 loopback is not enabled. I am setting this to the IPv4 loopback address of the LPAR
-        OPENSHIFT_IP: "{{ daemonIP }}"
+        OPENSHIFT_IP: "127.0.0.1"
       register: gradleResult
 
     - name: Confirm Gradle build STDOUT
