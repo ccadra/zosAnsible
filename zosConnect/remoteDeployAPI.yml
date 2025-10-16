@@ -150,7 +150,7 @@
         replace: '  - url: /{{ apiName }}'
       register: set_contextRoot
 
-    - name: Update settings.gradle to point to dependecies location on z/OS
+    - name: Update settings.gradle and build.gradle to point to dependecies location on z/OS
       replace:
         path: "{{ item }}"
         after: "maven {"
@@ -160,6 +160,29 @@
         - "~/tmp/{{ projectName }}/settings.gradle"
         - "~/tmp/{{ projectName }}/build.gradle"
       register: update_dependencies
+
+    - name: Get zosconnect gradle plugin version from z/OS
+      find:
+        paths: "/usr/local/gradle/gradleLibs/com/ibm/zosconnect/gradle/com.ibm.zosconnect.gradle.gradle.plugin/"
+        file_type: directory
+      register: gather_zosPluginVersion
+
+    - name: Get zosconnect gradle plugin version used in Designer
+      slurp:
+        src: "~/tmp/{{ projectName }}/build.gradle"
+      register: gather_designerPluginVersion
+
+    - name: Set zosconnect gradle plugin versions
+      set_fact:
+        zosPluginVersion: "{{ gather_zosPluginVersion.files[0].path | ansible.builtin.basename }}"
+        designerPluginVersion: "{{ (gather_designerPluginVersion.content | b64decode).split('\n') | regex_search(\"version '(.*?)'\", '\\1') | last }}"
+
+    - name: Set zosconnect gradle plugin version to match that present on z/OS
+      replace:
+        path: "~/tmp/{{ projectName }}/build.gradle"
+        regexp: "{{ designerPluginVersion }}"
+        replace: "{{ zosPluginVersion }}"
+      when: (designerPluginVersion != zosPluginVersion) and compatibilityMode | bool
 
     - name: Build the application with Gradle
       shell: bash /usr/local/gradle/bin/gradle --offline build
@@ -188,9 +211,10 @@
 
     - name: Deploy API to server
       copy:
-        src: "{{ localRepo }}/{{ projectName }}/build/libs/api.war"
+        src: "~/tmp/{{ projectName }}/build/libs/api.war"
         dest: "{{ serversDirectory }}/{{ zcName }}/apps/{{ apiName }}.war"
         mode: "0775"
+        remote_src: yes
     
     - name: Insert application xml if not already present
       lineinfile:
@@ -198,6 +222,10 @@
         insertafter: '<!-- Place application configuration below -->'
         line: '    <webApplication id="{{ apiName }}" location="${server.config.dir}apps/{{ apiName }}.war" name="{{ apiName }}" contextRoot="/{{ apiName }}"/>'
         state: present
+
+    - name: Set deploy time
+      set_fact:
+        deployTime: "{{ now() }}"
 
     - name: Refresh z/OS Connect to install 
       zos_operator:
@@ -222,4 +250,4 @@
 
     - name: Confirm API deployment recent (last 30 seconds)
       debug:
-        msg: "{{ (now() - ((gather_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName ) | last | regex_search('\\[(.*?)\\]')) | to_datetime('[%m/%d/%y, %H:%M:%S:%f %Z]'))).total_seconds() < 30 }}" 
+        msg: "Was {{ apiName }} deployed successfully: {{  ((gather_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName ) | last | regex_search('\\[(.*?)\\]')) | to_datetime('[%m/%d/%y, %H:%M:%S:%f %Z]')) > (deployTime | to_datetime('%Y-%m-%d %H:%M:%S.%f')) }}"
