@@ -22,7 +22,7 @@
 #   
 #   Edward McCarthy
 #   edwardmc@au1.ibm.com
-#   June 2022
+#   September 2025
 #
 # No warranty implied
 ###############################################################################
@@ -34,6 +34,7 @@
   collections:
     - ibm.ibm_zos_core
     - ansible.builtin
+    - ansible.community.general
 
   environment: "{{ environment_vars }}" 
 
@@ -210,15 +211,15 @@
       shell: "jls -o id,name,status | grep AC | grep {{ zcName }}"
       register: gather_serverDetails
 
-    - name: Confirm API has been successfully deployed
+    - name: Gather API deployment status from server
       zos_job_output:
         job_id: "{{ gather_serverDetails.stdout.split(' ')[0] }}"
         ddname: "STDOUT"
-      register: confirm_deploy
-      until: "(confirm_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName) | length > 0)"
+      register: gather_deploy
+      until: "(gather_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName) | length > 0)"
       retries: 2
       delay: 10
 
-    - name: Print deploy
+    - name: Confirm API deployment recent (last 30 seconds)
       debug:
-        msg: "{{ confirm_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName )}}"
+        msg: "{{ (now() - ((gather_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName ) | last | regex_search('\\[(.*?)\\]')) | to_datetime('[%m/%d/%y, %H:%M:%S:%f %Z]'))).total_seconds() < 30 }}" 
