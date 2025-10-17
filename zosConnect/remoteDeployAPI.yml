@@ -24,6 +24,10 @@
 #   edwardmc@au1.ibm.com
 #   September 2025
 #
+#   Nikita Skyba
+#   nikita.skyba@ibm.com
+#   September 2025
+#
 # No warranty implied
 ###############################################################################
 
@@ -119,6 +123,12 @@
         path: "{{ localRepo }}/{{ projectName }}/"
         dest: "/tmp/{{ projectName }}.tgz"
         format: zip
+
+    - name: Create ~/tmp directory
+      file:
+        path: "~/tmp/"
+        state: directory
+        mode: "0755"
 
     - name: Deploy API project zip to zOS
       copy:
@@ -248,6 +258,6 @@
       retries: 2
       delay: 10
 
-    - name: Confirm API deployment recent (last 30 seconds)
+    - name: Confirm API deployment since refresh command issued
       debug:
         msg: "Was {{ apiName }} deployed successfully: {{  ((gather_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName ) | last | regex_search('\\[(.*?)\\]')) | to_datetime('[%m/%d/%y, %H:%M:%S:%f %Z]')) > (deployTime | to_datetime('%Y-%m-%d %H:%M:%S.%f')) }}"
