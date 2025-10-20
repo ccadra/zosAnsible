@@ -131,6 +131,27 @@
   ###############################################################################
 
   ###############################################################################
+  # Condition - Start: serverType is not sample-cics-api
+  #   Default z/OS Connect ports need to be overriden in environments which will
+  #   have more than one running server.
+  ###############################################################################
+
+    - name: Update server ports
+      lineinfile:
+        path: '{{ serversDirectory }}/{{ zcName }}/server.xml'
+        regexp: '{{ item.key }}='
+        line: '                  {{ item.key }}={{ item.value }}'
+        backrefs: true
+      loop:
+        - { key: 'httpPort', value: '"{{ httpPort }}"' }
+        - { key: 'httpsPort', value: '"{{ httpsPort }}" />' }
+      when: "serverType != 'sample-cics-api'"
+
+  ###############################################################################
+  # Condition - Stop: serverType is not sample-cics-api
+  ###############################################################################
+
+  ###############################################################################
   # Change ownership of created server files and directories to the user ID 
   # specified in zcOwner variable and group in zcGroup variable.
   # In my case, the owner is the z/OS Connect STC user ID and the group is a
