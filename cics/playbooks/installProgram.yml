@@ -1,0 +1,98 @@
+###############################################################################
+# defineBAQ.yml
+#
+# Description
+#   This playbook demonstrates deprovisioning a z/OS Connect server, stopping
+#   the server if it running and removing the server directoy that holds the 
+#   configuration for the server.
+# 
+# Required files
+#   - vars/common.yml
+#   Contains common variables related to your installation of z/OS Connect.
+#     
+# Author
+#   Caleb Adra
+#   cadra@ibm.com
+#   September 2025
+#
+# No warranty implied
+###############################################################################
+---
+
+- hosts: zos_host
+
+  collections:
+    - ibm.ibm_zos_core
+    - ibm.ibm_zos_cics
+    - ansible.builtin
+
+  environment: "{{ environment_vars }}"
+
+  gather_facts: no
+
+  vars_files:
+  - ../vars/common.yml
+  
+  ############################################################################
+  # Generate a passticket for authentication with CICS in subsequent tasks
+  ############################################################################
+  tasks:
+    - name: Generate Passticket
+      zos_script:
+        cmd: ./scripts/ptktgen.sh $USER
+        executable: /bin/sh
+        remote_src: true
+      register: creds
+
+    ############################################################################
+    # 
+    ############################################################################
+
+    - name: Confirm if the program is currently installed
+      delegate_to: "localhost"
+      cmci_get:
+        context: "{{ context }}"
+        cmci_host: "{{ cmci_host }}"
+        cmci_port: "{{ cmci_port | int }}"
+        cmci_user: "{{ creds.stdout_lines[0] | default(omit) }}"
+        cmci_password: "{{ creds.stdout_lines[1] | default(omit) }}"
+        scheme: "{{ scheme }}"
+        type: "CICSProgram"
+        resources:
+          filter:
+            PROGRAM: "{{ program }}"
+      register: result
+
+    - name: Create the CICS Program Definition
+      delegate_to: "localhost"
+      cmci_create:
+        context: "{{ context }}"
+        cmci_host: "{{ ansible_host }}"
+        cmci_port: "{{ cmci_port }}"
+        cmci_user: "{{ creds.stdout_lines[0] | default(omit) }}"
+        cmci_password: "{{ creds.stdout_lines[1] | default(omit) }}"
+        scheme: "{{ scheme }}"
+        type: "CICSDefinitionProgram"
+        attributes:
+          name: "{{ program }}"
+          csdgroup: "{{ csdgroup }}"
+        create_parameters:
+          - name: "CSD"
+      ignore_errors: true
+    
+    - name: Install the CICS Program definition
+      cmci_action:
+        context: "{{ context }}"
+        cmci_host: "{{ ansible_host }}"
+        cmci_port: "{{ cmci_port }}"
+        cmci_user: "{{ creds.stdout_lines[0] | default(omit) }}"
+        cmci_password: "{{ creds.stdout_lines[1] | default(omit) }}"
+        scheme: "{{ scheme }}"
+        type: "CICSDefinitionProgram"
+        action_name: "CSDINSTALL"
+        resources:
+          filter:
+            NAME: "{{ program }}"
+          get_parameters:
+            - name: "CSDGROUP"
+              value: "{{ csdgroup }}"

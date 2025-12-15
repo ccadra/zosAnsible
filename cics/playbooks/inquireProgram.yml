@@ -1,0 +1,67 @@
+###############################################################################
+# defineBAQ.yml
+#
+# Description
+#   This playbook demonstrates deprovisioning a z/OS Connect server, stopping
+#   the server if it running and removing the server directoy that holds the 
+#   configuration for the server.
+# 
+# Required files
+#   - vars/common.yml
+#   Contains common variables related to your installation of z/OS Connect.
+#     
+# Author
+#   Caleb Adra
+#   cadra@ibm.com
+#   September 2025
+#
+# No warranty implied
+###############################################################################
+---
+
+- hosts: zos_host
+
+  collections:
+    - ibm.ibm_zos_core
+    - ibm.ibm_zos_cics
+    - ansible.builtin
+
+  environment: "{{ environment_vars }}"
+
+  gather_facts: no
+
+  vars_files:
+  - ../vars/common.yml
+  
+  ############################################################################
+  # Generate a passticket for authentication with CICS in subsequent tasks
+  ############################################################################
+  tasks:
+    - name: Generate Passticket
+      zos_script:
+        cmd: ./scripts/ptktgen.sh $USER
+        executable: /bin/sh
+        remote_src: true
+      register: creds
+
+    - name: Inquire program
+      delegate_to: "localhost"
+      cmci_get:
+        context: "{{ region }}"
+        cmci_host: "{{ ansible_host }}"
+        cmci_port: "{{ cmci_port }}"
+        cmci_user: "{{ creds.stdout_lines[0] | default(omit) }}"
+        cmci_password: "{{ creds.stdout_lines[1] | default(omit) }}"
+        scheme: "{{ scheme }}"
+        type: "CICSProgram"
+        resources:
+          filter:
+            PROGRAM: "{{ program }}"
+      register: inquire_program
+    
+    - name: Print query results
+      debug:
+        msg: "Program: {{ item.program }} is {{ item.status }}. It was last changed on {{ item.changetime }}"
+      with_items: "{{ inquire_program.records }}"
+      loop_control:
+        label: "{{ item.program }}"

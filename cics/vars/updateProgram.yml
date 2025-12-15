@@ -1,0 +1,9 @@
+libPrefix: "SYS1"
+langPrefix: "CBL640.IGY"
+compileOptions: "NODYNAM,OBJECT,RENT,APOST,MAP,XREF,CICS(''COBOL3,SP'')"
+linkParameters: "LIST,XREF,RENT,MAP"
+
+cicsPrefix: "CICSTS62.CICS"
+zcPrefix: "BAQ"
+
+cicsLoadLibrary: "CICSSYD.ZCEE.LOAD"

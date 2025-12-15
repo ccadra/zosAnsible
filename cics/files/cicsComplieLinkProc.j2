@@ -1,0 +1,19 @@
+//IBM048CL JOB (ACCT),'JOBCARD',CLASS=A,MSGCLASS=H,
+// NOTIFY=&SYSUID
+//PROCLIB JCLLIB ORDER=({{ langPrefix }}.SIGYPROC)
+//COMPLINK  EXEC PROC=IGYWCL,
+// LNGPRFX={{ langPrefix }},
+// LIBPRFX={{ libPrefix }},
+// PGMLIB={{ loadLibrary }},
+// GOPGM={{ program }},
+// PARM.COBOL='{{ compileOptions | safe }}',
+// PARM.LKED='{{ linkParameters }}'
+//COBOL.SYSIN   DD DSN={{ sourceLibrary }}({{ program }}),DISP=SHR
+//COBOL.STEPLIB DD DSN={{ cicsPrefix }}.SDFHLOAD,DISP=SHR
+//COBOL.SYSLIB  DD DSN=IBM048.ZC.COPY,DISP=SHR
+//              DD DSN={{ zcPrefix }}.SBAQCOB,DISP=SHR
+//LKED.SYSLIB   DD DSN={{ cicsPrefix }}.SDFHLOAD,DISP=SHR
+//              DD DSN={{ libPrefix }}.SCEELKEX,DISP=SHR
+//              DD DSN={{ libPrefix }}.SCEELKED,DISP=SHR
+//              DD DSN={{ libPrefix }}.SIEALNKE,DISP=SHR
+//              DD DSN={{ zcPrefix }}.SBAQLIB1,DISP=SHR

@@ -1,0 +1,61 @@
+###############################################################################
+# defineBAQ.yml
+#
+# Description
+#   This playbook demonstrates deprovisioning a z/OS Connect server, stopping
+#   the server if it running and removing the server directoy that holds the 
+#   configuration for the server.
+# 
+# Required files
+#   - vars/common.yml
+#   Contains common variables related to your installation of z/OS Connect.
+#     
+# Author
+#   Caleb Adra
+#   cadra@ibm.com
+#   September 2025
+#
+# No warranty implied
+###############################################################################
+---
+
+- hosts: zos_host
+
+  collections:
+    - ibm.ibm_zos_core
+    - ibm.ibm_zos_cics
+    - ansible.builtin
+
+  environment: "{{ environment_vars }}"
+
+  gather_facts: no
+
+  vars_files:
+  - ../vars/common.yml
+  
+  ############################################################################
+  # Generate a passticket for authentication with CICS in subsequent tasks
+  ############################################################################
+  tasks:
+    - name: Generate Passticket
+      zos_script:
+        cmd: ./scripts/ptktgen.sh $USER
+        executable: /bin/sh
+        remote_src: true
+      register: creds
+
+    ############################################################################
+    # 
+    ############################################################################
+
+    - name: Install z/OS Connect API Requester CICS definitions
+      delegate_to: "localhost"
+      csd:
+        region_data_sets:
+          dfhcsd: 
+            dsn: "CICSUSER.CICSSYD.V62.DFHCSD"
+        cics_data_sets:
+          sdfhload: "CICSTS62.CICS.SDFHLOAD"
+        state: "changed"
+        input_location: "data_set"
+        input_src: "{{ BAQHCSD }}"

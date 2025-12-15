@@ -1,4 +1,6 @@
 # Directory where servers are configured, this the directory that will contain the ${server.config.dir}
 serversDirectory: "/var/zosconnect/servers"
 # Directory where the z/OS Connect product code has been installed 
-installDirectory: "/usr/lpp/zosconnect"
+installDirectory: "/usr/lpp/IBM/zosconnect/v3r0"
+# profilePrefix set in the safCredentials element of the server
+applName: Z3APPL

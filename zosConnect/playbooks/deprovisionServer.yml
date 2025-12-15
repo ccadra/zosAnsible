@@ -1,0 +1,85 @@
+###############################################################################
+# deprovisionServer.yml
+#
+# Description
+#   This playbook demonstrates deprovisioning a z/OS Connect server, stopping
+#   the server if it running and removing the server directoy that holds the 
+#   configuration for the server.
+# 
+# Required files
+#   - vars/common.yml
+#   Contains common variables related to your installation of z/OS Connect.
+#     
+# Author
+#   Caleb Adra
+#   cadra@ibm.com
+#   September 2025
+#
+# No warranty implied
+###############################################################################
+
+---
+
+- hosts: zos_host
+
+  collections:
+    - ibm.ibm_zos_core
+    - ansible.builtin.command
+
+  environment: "{{ environment_vars }}"
+
+  vars_files:
+    - ../vars/common.yml
+
+  gather_facts: no
+  
+  tasks:
+
+  ###############################################################################
+  # List jobs in JES to determine if the server specified in the zcName variable
+  # is currently running
+  ###############################################################################
+
+    - name: Confirm z/OS Connect server matching name supplied is running
+      shell: "jls -o id,name,status | grep AC | grep {{ zcName }}"
+      register: gather_serverDetails
+      ignore_errors: true
+
+  ###############################################################################
+  # Condition - Start: Server is running
+  #   Stop the z/OS Connect server using the active server's JOBID
+  #   Confirm that the server is no longer running by querying JES for the 
+  #   RETURN CODE for the JOBID.
+  ###############################################################################
+
+    - name: Stop z/OS Connect server
+      zos_operator:
+        cmd: "P {{ zcName }}"
+      register: stop_server
+      when: "zcName in gather_serverDetails.stdout"
+
+    - name: Confirm server has shut down
+      zos_job_query:
+        job_id: "{{ gather_serverDetails.stdout.split(' ')[0] }}"
+      register: confirm_serverStatus
+      until: 'confirm_serverStatus.jobs[0].ret_code is defined'
+      retries: 2
+      delay: 10
+      when: "zcName in gather_serverDetails.stdout"
+
+  ###############################################################################
+  # Condition - Stop: Server is running
+  ###############################################################################
+
+  ###############################################################################
+  # Delete server configuration files. Confirmation task supplied can be
+  # uncommented for debugging.
+  ###############################################################################
+
+    - name: Delete z/OS Connect configuration files
+      shell: "echo rm -R {{ serversDirectory }}/{{ zcName }} | su"
+      register: delete_configuration
+
+    # - name: Confirm z/OS Connect file deletion
+    #   shell: "ls -l {{ serversDirectory }}/"
+    #   register: confirm_deletion

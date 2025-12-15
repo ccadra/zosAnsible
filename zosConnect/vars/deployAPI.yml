@@ -14,16 +14,27 @@ localJDK: "/Library/Java/JavaVirtualMachines/ibm-semeru-open-21.jdk/Contents/Hom
 # Github repo containing project created via z/OS Connect Designer
 gitRepo: git@github.com:ccadra/catalogManager.git
 # Github project name
-projectName: "catalogManager"
-# z/OS CICS program asset specified in design phase
-assetName: "catalogProgram"
-# CICS connection reference specified in design phase
-designerConn: "cicsConn"
+projectName: "Db2Snoop"
+# Connection reference(s) specified in design phase
+designerConn:
+# DB2 Connection ID
+- "db2Conn"
+# CICS Connection ID
+- "cicsConn"
+# Other Connection ID
 
 ###############################################################################
 # Target server variables
 ###############################################################################
 # Name of API to be deployed
-apiName: "catalogManager"
-# CICS connection reference
-serverConn: "CICSSYD1"
+apiName: "Db2Snoop"
+# Connection references in live server
+serverConn:
+# DB2 Connection ID
+- "DBDG"
+# CICS Connection ID
+- "CICSSYD1"
+# Other Connection ID
+
+serverRoles: "Snoopy"
+racfGroup: "ZCEEGRP"

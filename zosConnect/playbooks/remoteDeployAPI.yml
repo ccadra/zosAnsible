@@ -1,0 +1,308 @@
+###############################################################################
+# remoteDeployAPI.yml
+#
+# Description
+#   This playbook demonstrates deploying an API to a native, OpenAPI 3 
+#   z/OS Connect server. It is not yet complete as it does not cover security
+#   roles being added to openapi.yaml before the gradle build. This is planned
+#   to be included in my next commit.
+# 
+# Required files
+#   - vars/common.yml
+#   Contains common variables related to your installation of z/OS Connect.
+#   - /vars/deployAPI.yml
+#   Contains variables related to the API project and binaries required to 
+#   build it. These should be replaced with values appropriate to your site
+#   and your controller node binary locations.
+#     
+# Authors
+#   Caleb Adra
+#   cadra@ibm.com
+#   September 2025
+#   
+#   Edward McCarthy
+#   edwardmc@au1.ibm.com
+#   September 2025
+#
+#   Nikita Skyba
+#   nikita.skyba@ibm.com
+#   September 2025
+#
+# No warranty implied
+###############################################################################
+
+---
+
+- hosts: zos_host
+
+  collections:
+    - ibm.ibm_zos_core
+    - ansible.builtin
+    - ansible.community.general
+
+  environment: "{{ environment_vars }}" 
+
+  vars_files:
+    - ../vars/common.yml
+    - ../vars/deployAPI.yml
+
+  gather_facts: no
+  
+  tasks:
+
+    - name: Confirm whether gradle installed on z/OS
+      stat:
+        path: "/usr/local/gradle/bin/gradle"
+      register: confirm_gradleInstall
+
+  ###############################################################################
+  # Condition - Start: z/OS Connect gradle installed
+  #   For consistent results, this playbook uses the gradle supplied with the
+  #   z/OS Connect installation to rebuild API projects.
+  #   Unzip gradle.zip and dependencies.zip from z/OS Connect installation into 
+  #   PATH of z/OS LPAR. 
+  ###############################################################################
+
+    - name: Unzip gradle.zip from the installation directory
+      shell: "jar -xvf {{ installDirectory }}/gradle.zip"
+      args:
+        chdir: "/usr/local/"
+      register: unzip_gradle
+      when: not confirm_gradleInstall.stat.exists
+
+    - name: Create symlink for new install of gradle
+      shell: "ln -s {{ unzip_gradle.stdout_lines[0] | regex_search('gradle-[\\d\\.]+/') }} gradle"
+      args:
+        chdir: "/usr/local/"
+      register: create_gradleSymlink
+      when: not confirm_gradleInstall.stat.exists
+
+    - name: Unzip dependencies.zip from the installation directory
+      shell: "jar -xvf {{ installDirectory }}/dependencies.zip"
+      args:
+        chdir: "/usr/local/gradle/"
+      register: unzip_dependencies
+      when: not confirm_gradleInstall.stat.exists
+
+    - name: Update gradle binaries to be executable
+      shell: |
+        chtag -tc ISO8859-1 gradle
+        chmod +x gradle
+      args:
+        chdir: "/usr/local/gradle/bin"
+      register: update_gradlePermissions
+      when: not confirm_gradleInstall.stat.exists
+
+  ###############################################################################
+  # Condition - Stop: z/OS Connect gradle installed
+  ###############################################################################
+
+  ###############################################################################
+  # Clone API project source from git to a local repo and modify it to allow
+  # for deployment into a native z/OS Connect server.
+  ###############################################################################  
+
+    - name: Clone project source to local system
+      delegate_to: localhost
+      git:
+        clone: true
+        repo: "{{ gitRepo }}"
+        dest: "{{ localRepo }}/{{ projectName }}"
+        force: true
+      environment:
+        PATH: "/usr/bin"
+
+  ###############################################################################
+  # Rebuild project with Gradle to create war file with changes incorporated.
+  # Confirmation task supplied can be uncommented for debugging.
+  ###############################################################################  
+
+    - name: Compress directory into tar file
+      delegate_to: localhost
+      archive:
+        path: "{{ localRepo }}/{{ projectName }}/"
+        dest: "/tmp/{{ projectName }}.tgz"
+        format: zip
+
+    - name: Create ~/tmp directory
+      file:
+        path: "~/tmp/"
+        state: directory
+        mode: "0755"
+
+    - name: Deploy API project zip to zOS
+      copy:
+        src: "/tmp/{{ projectName }}.tgz"
+        dest: "~/tmp/{{ projectName }}.tgz"
+        mode: "0755"
+    
+    - name: Unzip the project into a directory
+      shell: |
+        mkdir {{ projectName }}
+        cd {{ projectName }}
+        jar -xvf ../{{ projectName }}.tgz
+      args:
+        chdir: "~/tmp/"
+      register: untar_project
+
+    - name: List zosAssets in the API project
+      find:
+        paths: "~/tmp/{{ projectName }}/src/main/zosAssets"
+        file_type: directory
+      register: gather_assets
+
+    - name: Update designer connection references to server connection references in all zosAssets 
+      vars:
+        fileList: "{{ gather_assets.files | map(attribute='path') | list }}"
+        connectionMap: "{{ dict(designerConn | zip(serverConn)) | dict2items }}"
+      replace:
+        path: "{{ item[0] }}/zosAsset.yaml"
+        regexp: "{{ item[1].key }}"
+        replace: "{{ item[1].value }}"
+      loop: "{{ fileList | product(connectionMap) | list }}"
+      register: update_Connection
+
+    - name: Set security roles for API
+      lineinfile:
+        path: "~/tmp/{{ projectName }}/src/main/api/openapi.yaml"
+        insertafter: "- url: /" 
+        line: "{{ item }}"
+        state: present
+      loop:
+      - '- {{ serverRoles }}'
+      - 'x-ibm-zcon-roles-allowed:'
+      register: set_security
+    
+    - name: Create EJBROLE resource to secure API access
+      ibm.ibm_zos_core.zos_tso_command:
+        commands:
+        - RDEFINE EJBROLE {{ applName }}.{{ apiName }}.{{ serverRoles }} UACC(NONE)
+      register: create_security
+      failed_when:
+        # 1. First condition: Check if the specific ignorable message is NOT present.
+        - "'ALREADY DEFINED TO CLASS EJBROLE' not in create_security.output[0].content[0]"
+        # 2. Second condition: Check if the script returned a non-zero exit code.
+        - "create_security.output[0].rc != 0"
+
+    - name: Permit access to EJBROLE resource for specified group
+      ibm.ibm_zos_core.zos_tso_command:
+        commands:
+        - PERMIT {{ applName }}.{{ apiName }}.{{ serverRoles }} CLASS(EJBROLE) ACCESS(READ) ID({{ racfGroup }})
+      register: permit_security
+
+    - name: Refresh EJBROLE resource definitions
+      ibm.ibm_zos_core.zos_tso_command:
+        commands:
+        - SETROPTS CLASSACT(EJBROLE)
+      register: refresh_security
+
+    - name: Set context root of API for deployment in server
+      replace:
+        path: "~/tmp/{{ projectName }}/src/main/api/openapi.yaml"
+        after: 'servers:'
+        regexp: '- url: /.*$'
+        replace: '  - url: /{{ apiName }}'
+      register: set_contextRoot
+
+    - name: Update settings.gradle and build.gradle to point to dependecies location on z/OS
+      replace:
+        path: "{{ item }}"
+        after: "maven {"
+        regexp: "url .*"
+        replace: "url '/usr/local/gradle/gradleLibs'"
+      loop:
+        - "~/tmp/{{ projectName }}/settings.gradle"
+        - "~/tmp/{{ projectName }}/build.gradle"
+      register: update_dependencies
+
+    - name: Get zosconnect gradle plugin version from z/OS
+      find:
+        paths: "/usr/local/gradle/gradleLibs/com/ibm/zosconnect/gradle/com.ibm.zosconnect.gradle.gradle.plugin/"
+        file_type: directory
+      register: gather_zosPluginVersion
+
+    - name: Get zosconnect gradle plugin version used in Designer
+      slurp:
+        src: "~/tmp/{{ projectName }}/build.gradle"
+      register: gather_designerPluginVersion
+
+    - name: Set zosconnect gradle plugin versions
+      set_fact:
+        zosPluginVersion: "{{ gather_zosPluginVersion.files[0].path | ansible.builtin.basename }}"
+        designerPluginVersion: "{{ (gather_designerPluginVersion.content | b64decode).split('\n') | regex_search(\"version '(.*?)'\", '\\1') | last }}"
+
+    - name: Set zosconnect gradle plugin version to match that present on z/OS
+      replace:
+        path: "~/tmp/{{ projectName }}/build.gradle"
+        regexp: "{{ designerPluginVersion }}"
+        replace: "{{ zosPluginVersion }}"
+      when: (designerPluginVersion != zosPluginVersion) and compatibilityMode | bool
+
+    - name: Build the application with Gradle
+      shell: bash /usr/local/gradle/bin/gradle --offline build
+      args:
+        chdir: "~/tmp/{{ projectName }}/"
+      environment:
+        _BPXK_AUTOCVT: "ON"
+        GRADLE_OPTS: "-Dfile.encoding=UTF-8"
+        JAVA_HOME: /usr/lpp/java/J17.0_64
+      # OPENSHIFT_IP variable used due to Java 17 on z/OS preferring IPv6, even when IPv6 loopback is not enabled. I am setting this to the IPv4 loopback address of the LPAR
+        OPENSHIFT_IP: "127.0.0.1"
+      register: gradleResult
+
+    - name: Confirm Gradle build STDOUT
+      debug: 
+        msg: gradleResult.stdout_lines
+
+    - name: Confirm Gradle build STDERR
+      debug: 
+        msg: gradleResult.stderr_lines
+
+  ###############################################################################
+  # Deploy API war file to server with the desired name. Issue z/OS Connect
+  # operator commands to refresh server configuration and detect new (or 
+  # updated) applications in the apps directory.
+  ############################################################################### 
+
+    - name: Deploy API to server
+      copy:
+        src: "~/tmp/{{ projectName }}/build/libs/api.war"
+        dest: "{{ serversDirectory }}/{{ zcName }}/apps/{{ apiName }}.war"
+        mode: "0775"
+        remote_src: yes
+    
+    - name: Insert application xml if not already present
+      lineinfile:
+        path: "{{ serversDirectory }}/{{ zcName }}/apps.xml"
+        insertafter: '<!-- Place application configuration below -->'
+        line: '    <webApplication id="{{ apiName }}" location="${server.config.dir}apps/{{ apiName }}.war" name="{{ apiName }}" contextRoot="/{{ apiName }}"/>'
+        state: present
+
+    - name: Set deploy time
+      set_fact:
+        deployTime: "{{ now() }}"
+
+    - name: Refresh z/OS Connect to install 
+      zos_operator:
+        cmd: "{{ item }}"
+      loop:
+        - "F {{ zcName }},REFRESH,APPS"
+        - "F {{ zcName }},REFRESH,CONFIG"
+      register: start_server
+
+    - name: Gather information about running z/OS Connect server
+      shell: "jls -o id,name,status | grep AC | grep {{ zcName }}"
+      register: gather_serverDetails
+
+    - name: Gather API deployment status from server
+      zos_job_output:
+        job_id: "{{ gather_serverDetails.stdout.split(' ')[0] }}"
+        ddname: "STDOUT"
+      register: gather_deploy
+      until: "(gather_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName) | length > 0)"
+      retries: 2
+      delay: 10
+
+    - name: Confirm API deployment since refresh command issued
+      debug:
+        msg: "Was {{ apiName }} deployed successfully: {{  ((gather_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName ) | last | regex_search('\\[(.*?)\\]')) | to_datetime('[%m/%d/%y, %H:%M:%S:%f %Z]')) > (deployTime | to_datetime('%Y-%m-%d %H:%M:%S.%f')) }}"
