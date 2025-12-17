@@ -250,13 +250,13 @@
         OPENSHIFT_IP: "127.0.0.1"
       register: gradleResult
 
-    - name: Confirm Gradle build STDOUT
-      debug: 
-        msg: gradleResult.stdout_lines
+    # - name: Confirm Gradle build STDOUT
+    #   debug: 
+    #     msg: gradleResult.stdout_lines
 
-    - name: Confirm Gradle build STDERR
-      debug: 
-        msg: gradleResult.stderr_lines
+    # - name: Confirm Gradle build STDERR
+    #   debug: 
+    #     msg: gradleResult.stderr_lines
 
   ###############################################################################
   # Deploy API war file to server with the desired name. Issue z/OS Connect

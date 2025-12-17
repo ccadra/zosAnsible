@@ -93,14 +93,60 @@
         force: true
       environment:
         PATH: "/usr/bin"
-    
-    - name: Update CICS connection reference for server
+
+    - name: List zosAssets in the API project
       delegate_to: localhost
+      find:
+        paths: "{{ localRepo }}/{{ projectName }}/src/main/zosAssets"
+        file_type: directory
+      register: gather_assets
+
+    - name: Update designer connection references to server connection references in all zosAssets
+      delegate_to: localhost 
+      vars:
+        fileList: "{{ gather_assets.files | map(attribute='path') | list }}"
+        connectionMap: "{{ dict(designerConn | zip(serverConn)) | dict2items }}"
       replace:
-        path: "{{ localRepo }}/{{ projectName }}/src/main/zosAssets/{{ assetName }}/zosAsset.yaml"
-        regexp: "{{ designerConn }}"
-        replace: "{{ serverConn }}"
-      register: update_cicsConnection
+        path: "{{ item[0] }}/zosAsset.yaml"
+        regexp: "{{ item[1].key }}"
+        replace: "{{ item[1].value }}"
+      loop: "{{ fileList | product(connectionMap) | list }}"
+      register: update_Connection
+
+    - name: Set security roles for API
+      delegate_to: localhost
+      lineinfile:
+        path: "{{ localRepo }}/{{ projectName }}/src/main/api/openapi.yaml"
+        insertafter: "- url: /" 
+        line: "{{ item }}"
+        state: present
+      loop:
+      - '- {{ serverRoles }}'
+      - 'x-ibm-zcon-roles-allowed:'
+      register: set_security
+
+    - name: Create EJBROLE resource to secure API access
+      ibm.ibm_zos_core.zos_tso_command:
+        commands:
+        - RDEFINE EJBROLE {{ applName }}.{{ apiName }}.{{ serverRoles }} UACC(NONE)
+      register: create_security
+      failed_when:
+        # 1. First condition: Check if the specific ignorable message is NOT present.
+        - "'ALREADY DEFINED TO CLASS EJBROLE' not in create_security.output[0].content[0]"
+        # 2. Second condition: Check if the script returned a non-zero exit code.
+        - "create_security.output[0].rc != 0"
+
+    - name: Permit access to EJBROLE resource for specified group
+      ibm.ibm_zos_core.zos_tso_command:
+        commands:
+        - PERMIT {{ applName }}.{{ apiName }}.{{ serverRoles }} CLASS(EJBROLE) ACCESS(READ) ID({{ racfGroup }})
+      register: permit_security
+
+    - name: Refresh EJBROLE resource definitions
+      ibm.ibm_zos_core.zos_tso_command:
+        commands:
+        - SETROPTS CLASSACT(EJBROLE)
+      register: refresh_security
 
     - name: Set context root of API for deployment in server
       delegate_to: localhost
@@ -118,7 +164,7 @@
 
     - name: Build the application with Gradle
       delegate_to: localhost
-      shell: "gradle clean build"
+      shell: "gradle build"
       args:
         chdir: "{{ localRepo }}/{{ projectName }}"
       environment: 
@@ -153,11 +199,15 @@
         insertafter: '<!-- Place application configuration below -->'
         line: '    <webApplication id="{{ apiName }}" location="${server.config.dir}apps/{{ apiName }}.war" name="{{ apiName }}" contextRoot="/{{ apiName }}"/>'
         state: present
+    
+    - name: Set deploy time
+      set_fact:
+        deployTime: "{{ now() }}"
 
     - name: Refresh z/OS Connect to install 
       zos_operator:
         cmd: "{{ item }}"
-      with_items:
+      loop:
         - "F {{ zcName }},REFRESH,APPS"
         - "F {{ zcName }},REFRESH,CONFIG"
       register: start_server
@@ -166,15 +216,15 @@
       shell: "jls -o id,name,status | grep AC | grep {{ zcName }}"
       register: gather_serverDetails
 
-    - name: Confirm API has been successfully deployed
+    - name: Gather API deployment status from server
       zos_job_output:
         job_id: "{{ gather_serverDetails.stdout.split(' ')[0] }}"
         ddname: "STDOUT"
-      register: confirm_deploy
-      until: "(confirm_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName) | length > 0)"
+      register: gather_deploy
+      until: "(gather_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName) | length > 0)"
       retries: 2
       delay: 10
 
-    # - name: Print deploy
-    #   debug:
-    #     msg: "{{ confirm_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName )}}"
+    - name: Confirm API deployment since refresh command issued
+      debug:
+        msg: "Was {{ apiName }} deployed successfully: {{  ((gather_deploy.jobs[0].ddnames[0].content | select('search', 'Web application available') | select('search', apiName ) | last | regex_search('\\[(.*?)\\]')) | to_datetime('[%m/%d/%y, %H:%M:%S:%f %Z]')) > (deployTime | to_datetime('%Y-%m-%d %H:%M:%S.%f')) }}"
