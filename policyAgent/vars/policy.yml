@@ -1,0 +1,32 @@
+# Rule Vars (Mandatory)
+rule_name: ZC_Test
+rule_description: z/OS Connect (Test)
+
+# Generic Vars
+userid: ZCEESTC
+direction: Inbound
+handshake_role: Server
+keyring: keyring~ZC_Server
+cipher_parms: cipher~ZC_Server
+priority: 100
+
+# Local IP Vars - If using GlobalLIP, local_IP not required
+useGlobalLIP: true
+local_addr: ASG_IP
+#local_IP: 9.98.113.30
+
+# Remote IP Vars - If allRemote, remote_addr not required. Otherwise, if using GlobalRIP, remote_IP not required.
+allRemote: true
+#useGlobalRIP: true
+#remote_addr: ALL_REMOTE
+#remote_IP: 9.98.113.30
+
+# Local IP Vars - If using GlobalLIP, local_IP not required
+useGlobalLPort: false
+local_portRange: "{{ rule_name }}_Local_PortRange"
+local_port: 3030
+
+# Remote IP Vars - If using GlobalRIP, remote_IP not required
+useGlobalRPort: true
+remote_portRange: EPHEMERAL_PORTS
+#remote_port: 

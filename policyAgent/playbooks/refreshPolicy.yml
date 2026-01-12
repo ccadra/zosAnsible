@@ -1,0 +1,72 @@
+###############################################################################
+# remoteDeployAPI.yml
+#
+# Description
+#   This playbook is used to validate changes made to the ATTLS Policy Agent
+#   via the F PAGENT,REFRESH command. After the refresh is issued, the log 
+#   will be scanned to indicated if/where errors are present.
+# 
+# Required files
+#   - vars/common.yml
+#   Contains common variables related to your configuration of the Policy 
+#   Agent, typically located in SYS1.TCPPARMS(PAGENT**).
+#     
+# Authors
+#   Caleb Adra
+#   cadra@ibm.com
+#   September 2025
+#
+#   Nikita Skyba
+#   nikita.skyba@ibm.com
+#   September 2025
+#
+# No warranty implied
+###############################################################################
+
+---
+
+- hosts: zos_host
+
+  collections:
+    - ibm.ibm_zos_core
+    - ansible.builtin
+    - ansible.community.general
+
+  environment: "{{ environment_vars }}"
+
+  gather_facts: no
+  
+  tasks:
+
+    - name: Issue policy refresh command
+      zos_operator:
+        cmd: "F {{ PAGENT }},REFRESH"
+      register: refresh_policyAgent
+
+    - name: Set refresh time
+      set_fact:
+        gatherTime: "{{ now() }}"
+
+    - name: Gather pagent refreshes
+      shell: "cat /tmp/pagent.log | grep 'EZZ8771I PAGENT CONFIG POLICY PROCESSING COMPLETE'"
+      register: gather_refresh
+      ignore_errors: true
+        
+    - name: Confirm policy refresh occurred
+      debug:
+        msg: "{{ gather_refresh.stdout_lines | last }}"
+      when: "{{ gather_refresh.stdout_lines | length > 0  }}"
+
+    - name: Gather pagent errors
+      shell: "cat /tmp/pagent.log | grep 'EZZ8438I PAGENT POLICY DEFINITIONS CONTAIN ERRORS'"
+      register: gather_error
+      ignore_errors: true
+    
+    - name: Confirm policy refresh had no errors
+      debug:
+        msg: "{{ gather_error.stdout_lines | last }}"
+      when: "{{ gather_error.stdout_lines | length > 0  }}"
+    
+    - name: Confirm policy refresh had no errors
+      debug:
+        msg: "Was policy refreshed successfully: {{ ((gather_refresh.stdout_lines | last)[0:14] | to_datetime('%m/%d %H:%M:%S')) >  (gatherTime | to_datetime('%Y-%m-%d %H:%M:%S.%f')) AND (gatherTime | to_datetime('%Y-%m-%d %H:%M:%S.%f')) > ((gather_error.stdout_lines | last)[0:14] | to_datetime('%m/%d %H:%M:%S')) }}"

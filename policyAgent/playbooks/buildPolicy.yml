@@ -1,0 +1,48 @@
+###############################################################################
+# remoteDeployAPI.yml
+#
+# Description
+#   This playbook is used to validate changes made to the ATTLS Policy Agent
+#   via the F PAGENT,REFRESH command. After the refresh is issued, the log 
+#   will be scanned to indicated if/where errors are present.
+# 
+# Required files
+#   - vars/common.yml
+#   Contains common variables related to your configuration of the Policy 
+#   Agent, typically located in SYS1.TCPPARMS(PAGENT**).
+#     
+# Authors
+#   Caleb Adra
+#   cadra@ibm.com
+#   September 2025
+#
+#   Nikita Skyba
+#   nikita.skyba@ibm.com
+#   September 2025
+#
+# No warranty implied
+###############################################################################
+
+---
+
+- hosts: zos_host
+
+  collections:
+    - ibm.ibm_zos_core
+    - ansible.builtin
+    - ansible.community.general
+
+  environment: "{{ environment_vars }}"
+
+  vars_files:
+    - ../vars/policy.yml
+
+  gather_facts: no
+  
+  tasks:
+  - name: Generate AT-TLS Policy
+    template:
+      src: policyTemplate.j2
+      dest: "/tmp/{{ rule_name }}_policy.conf"
+      mode: "0755"
+    register: generate_policy
