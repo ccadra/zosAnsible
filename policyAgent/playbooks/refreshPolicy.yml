@@ -1,10 +1,10 @@
 ###############################################################################
-# remoteDeployAPI.yml
+# refreshPolicy.yml
 #
 # Description
-#   This playbook is used to validate changes made to the ATTLS Policy Agent
-#   via the F PAGENT,REFRESH command. After the refresh is issued, the log 
-#   will be scanned to indicated if/where errors are present.
+#   This playbook is used to update changes made to the ATTLS Policy by
+#   refreshing the AT-TLS policy agent. After the refresh is issued, the log 
+#   will be scanned to indicate if/where errors are present.
 # 
 # Required files
 #   - vars/common.yml
@@ -14,11 +14,7 @@
 # Authors
 #   Caleb Adra
 #   cadra@ibm.com
-#   September 2025
-#
-#   Nikita Skyba
-#   nikita.skyba@ibm.com
-#   September 2025
+#   February 2026
 #
 # No warranty implied
 ###############################################################################
@@ -40,7 +36,7 @@
 
     - name: Issue policy refresh command
       zos_operator:
-        cmd: "F {{ PAGENT }},REFRESH"
+        cmd: "F {{ PAGENT | default('PAGENT') }},REFRESH"
       register: refresh_policyAgent
 
     - name: Set refresh time
@@ -68,5 +64,8 @@
       when: "{{ gather_error.stdout_lines | length > 0  }}"
     
     - name: Confirm policy refresh had no errors
+      vars:
+        refreshTime: "{{ gatherTime[0:4] ~ '/' ~ (gather_refresh.stdout_lines | last)[0:14] }}"
+        errorTime: "{{ gatherTime[0:4] ~ '/' ~ (gather_error.stdout_lines | last)[0:14] }}"
       debug:
-        msg: "Was policy refreshed successfully: {{ ((gather_refresh.stdout_lines | last)[0:14] | to_datetime('%m/%d %H:%M:%S')) >  (gatherTime | to_datetime('%Y-%m-%d %H:%M:%S.%f')) AND (gatherTime | to_datetime('%Y-%m-%d %H:%M:%S.%f')) > ((gather_error.stdout_lines | last)[0:14] | to_datetime('%m/%d %H:%M:%S')) }}"
+        msg: "Was policy refreshed successfully: {{ (refreshTime  | to_datetime('%Y/%m/%d %H:%M:%S')) > (gatherTime | to_datetime('%Y-%m-%d %H:%M:%S.%f')) and (gatherTime | to_datetime('%Y-%m-%d %H:%M:%S.%f')) > (errorTime | to_datetime('%Y/%m/%d %H:%M:%S')) }}"

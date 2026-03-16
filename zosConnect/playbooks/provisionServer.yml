@@ -75,21 +75,24 @@
   #   files directory and that file will be deployed to the server instead.
   ###############################################################################
 
-    - name: Prompt for CICS user and password
+    - name: Prompt for user and password to sign on to System of Record (SOR - CICS/Db2/IMS)
       pause:
         prompt: "{{ item }}"
       with_items:
-        - "What is the user to sign on to CICS?"
-        - "What is the password to sign on to CICS?"
-      register: prompt_cicsCreds
-      when: "serverType == 'sample-cics-api'"
+        - "What is the SoR user?"
+        - "What is the SoR password?"
+      register: prompt_sorCreds
+      when: "serverType.startswith('sample')"
 
-    - name: Generate AES encrypted password for CICS user
-      shell: "{{ installDirectory }}/wlp/bin/securityUtility encode {{ prompt_cicsCreds.results[1].user_input }} --encoding=aes"
-      register: encrypt_cicsPassword
-      when: "serverType == 'sample-cics-api'"
+    - name: Generate AES encrypted password for user
+      shell: "{{ installDirectory }}/wlp/bin/securityUtility encode {{ prompt_sorCreds.results[1].user_input }} --encoding=aes"
+      register: encrypt_sorPassword
+      when: "serverType.startswith('sample')"
     
     - name: Update bootstrap properties based on provisioning vars
+      vars:
+        sorUser: "{{ prompt_sorCreds.results[0].user_input }}"
+        sorPassword: "{{ encrypt_sorPassword.stdout }}"
       lineinfile:
         path: "{{ serversDirectory }}/{{ zcName }}/bootstrap.properties"
         regexp: "^{{ item.key }}="
@@ -100,8 +103,8 @@
         - { key: "HTTPS_PORT", value: "{{ httpsPort }}" }
         - { key: "CICS_HOST", value: "{{ cicsHost }}" }
         - { key: "CICS_PORT", value: "{{ cicsPort }}" }
-        - { key: "CICS_USER", value: "{{ prompt_cicsCreds.results[0].user_input }}" }
-        - { key: "CICS_PASSWORD", value: "{{ encrypt_cicsPassword.stdout }}" }
+        - { key: "SOR_USER", value: "{{ sorUser }}" }
+        - { key: "SOR_PASSWORD", value: "{{ sorPassword }}" }
       when: "serverType == 'sample-cics-api'"
 
     - name: Verify if local CICS definitions exist

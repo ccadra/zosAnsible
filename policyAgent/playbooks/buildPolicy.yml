@@ -1,10 +1,11 @@
 ###############################################################################
-# remoteDeployAPI.yml
+# buildPolicy.yml
 #
 # Description
-#   This playbook is used to validate changes made to the ATTLS Policy Agent
-#   via the F PAGENT,REFRESH command. After the refresh is issued, the log 
-#   will be scanned to indicated if/where errors are present.
+#   This playbook is used to assist in the creation of new AT-TLS rules to 
+#   encrypt traffic to/from z/OS. It does not update the live file, instead 
+#   generating the policy in a new file to be validated by the user before 
+#   incorporation into the master file.
 # 
 # Required files
 #   - vars/common.yml
@@ -14,11 +15,7 @@
 # Authors
 #   Caleb Adra
 #   cadra@ibm.com
-#   September 2025
-#
-#   Nikita Skyba
-#   nikita.skyba@ibm.com
-#   September 2025
+#   February 2026
 #
 # No warranty implied
 ###############################################################################

@@ -1,0 +1,45 @@
+###############################################################################
+# remoteDeployAPI.yml
+#
+# Description
+#   This playbook will enrol the specified user in MFA. This will require 
+#   the user to register with their chosen authentication app to generate
+#   limited-time passwords or supply their TSO password and authenticator
+#   code concatenated.
+#
+#   Note: Not all sign-on interfaces support 'passwords' longer than 8 
+#   characters, the user will need to generate a limited-time password
+#   in this case.
+# 
+# Required files
+#   - N/A
+#     
+# Authors
+#   Caleb Adra
+#   cadra@ibm.com
+#   February 2026
+#
+# No warranty implied
+###############################################################################
+
+---
+
+- hosts: zos_host
+
+  collections:
+    - ibm.ibm_zos_core
+    - ansible.builtin
+    - ansible.community.general
+
+  environment: "{{ environment_vars }}"
+
+  gather_facts: no
+  
+  tasks:
+  - name: Register existing user for MFA
+    zos_tso_command:
+      commands:
+        - ALTUSER {{ user }} MFA(FACTOR(AZFTOTP1) TAGS(REGSTATE:OPEN) PWFALLBACK ACTIVE)
+        - ALTUSER {{ user }} MFA(FACTOR(AZFPASS1) PWFALLBACK ACTIVE)
+        - ALTUSER {{ user }} MFA(ADDPOLICY(TOTPPOLICY))
+        - CONNECT {{ user }} GROUP(MFAUSER)

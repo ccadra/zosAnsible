@@ -2,7 +2,7 @@
 # Rule Definitions for {{ rule_description }}
 # ******************************************************************
 
-TLSRule                           {{ rule_name }}
+TTLSRule                          {{ rule_name }}
 {
   LocalAddrRef                    {{ local_addr }}
 {% if allRemote %}
@@ -15,9 +15,9 @@ TLSRule                           {{ rule_name }}
   Userid                          {{ userid }}
   Direction                       {{ direction }}
   Priority                        {{ priority }}
-  TTLSGroupActionRef              gAct~{{ rule_name }}
-  TTLSEnvironmentActionRef        eAct~{{ rule_name }}
-  TTLSConnectionActionRef         cAct~{{ rule_name }}
+  TTLSGroupActionRef              TLS_ON
+  TTLSEnvironmentActionRef        ENV_{{ handshake_role | upper }}
+  TTLSConnectionActionRef         CONN_{{ handshake_role | upper }}
 } 
 {% if useGlobalLIP is defined and not useGlobalLIP %}
 
@@ -47,34 +47,3 @@ PortRange                         {{ remote_portRange }}
   Port                            {{ remote_port }}
 } 
 {% endif %}
-
-TTLSGroupAction                   gAct~{{ rule_name }}
-{ 
-  TTLSEnabled                     On
-  Trace                           2
-} 
-
-TTLSEnvironmentAction             eAct~{{ rule_name }}
-{ 
-  HandshakeRole                   {{ handshake_role }}
-  EnvironmentUserInstance         0
-  TTLSKeyringParmsRef             {{ keyring }}
-} 
-
-TTLSConnectionAction              cAct~{{ rule_name }}
-{ 
-  HandshakeRole                   {{ handshake_role }}
-  TTLSCipherParmsRef              {{ cipher_parms }}
-  TTLSConnectionAdvancedParmsRef  cAdv~{{ rule_name }}
-  CtraceClearText                 Off
-  Trace                           2
-} 
-
-TTLSConnectionAdvancedParms       cAdv~{{ rule_name }}
-{
-  SSLv3                           Off
-  TLSv1                           Off
-  TLSv1.1                         Off
-  TLSv1.2                         On
-  TLSv1.3                         Off
-} 

@@ -1,14 +1,13 @@
 # Rule Vars (Mandatory)
-rule_name: ZC_Test
-rule_description: z/OS Connect (Test)
+rule_name: MFA_Server_NoMA
+rule_description: MFA
 
 # Generic Vars
-userid: ZCEESTC
+userid: AZF*
 direction: Inbound
 handshake_role: Server
-keyring: keyring~ZC_Server
-cipher_parms: cipher~ZC_Server
-priority: 100
+cipher_parms: CIPHERS_PLATINUM
+priority: 255
 
 # Local IP Vars - If using GlobalLIP, local_IP not required
 useGlobalLIP: true
@@ -24,7 +23,7 @@ allRemote: true
 # Local IP Vars - If using GlobalLIP, local_IP not required
 useGlobalLPort: false
 local_portRange: "{{ rule_name }}_Local_PortRange"
-local_port: 3030
+local_port: 6789
 
 # Remote IP Vars - If using GlobalRIP, remote_IP not required
 useGlobalRPort: true

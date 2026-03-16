@@ -1,0 +1,37 @@
+###############################################################################
+# createRoUser.yml
+#
+# Description
+#   This playbook is used to create a read-only user. It will also set their 
+#   intial password, the user will be prompted to change it when they first
+#   logon.
+# 
+# Required files
+#   - N/A
+#     
+# Authors
+#   Caleb Adra
+#   cadra@ibm.com
+#   February 2026
+#
+# No warranty implied
+###############################################################################
+
+---
+
+- hosts: zos_host
+
+  collections:
+    - ibm.ibm_zos_core
+    - ansible.builtin
+    - ansible.community.general
+
+  environment: "{{ environment_vars }}"
+
+  gather_facts: no
+  
+  tasks:
+  - name: Create read-only user
+    zos_tso_command:
+      commands:
+        - EXEC 'SYS1.CPAC.CMDPROC(ADDUSER)' 'USERID({{ userId }}) NAME({{ userName }}) G(MVSUSER)'
