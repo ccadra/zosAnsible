@@ -12,7 +12,7 @@
 # Authors
 #   Caleb Adra
 #   cadra@ibm.com
-#   February 2026
+#   Febraury 2026
 #
 # No warranty implied
 ###############################################################################
@@ -34,4 +34,4 @@
   - name: Create read-only user
     zos_tso_command:
       commands:
-        - EXEC 'SYS1.CPAC.CMDPROC(ADDUSER)' 'USERID({{ userId }}) NAME({{ userName }}) G(MVSUSER)'
+        - EXEC 'SYS1.CPAC.CMDPROC(ADDUSER)' 'USERID({{ userId }}) NAME(''{{ userName }}'') G(MVSUSER)'
